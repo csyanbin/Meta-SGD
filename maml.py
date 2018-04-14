@@ -61,8 +61,19 @@ class MAML:
             else:
                 # Define the weights
                 self.weights = weights = self.construct_weights()
-                self.update_lr = tf.Variable(0.001, "updatelr")
-
+                # self.update_lr = tf.Variable(0.001, name="updatelr")
+                lr_initializer = tf.initializers.truncated_normal(mean=0.01, stddev=0.001)
+                self.update_lr = {}
+                updatelr = tf.get_variable('updatelr', shape=(), initializer=tf.initializers.constant(0.01))
+                for name in weights.keys():
+                    if FLAGS.lr_mode==0:
+                        self.update_lr[name] = FLAGS.update_lr
+                    elif FLAGS.lr_mode==1:
+                        self.update_lr[name] = updatelr
+                    elif FLAGS.lr_mode==2:
+                        self.update_lr[name] = tf.get_variable(name+"_lr", shape=(), initializer=lr_initializer)
+                    elif FLAGS.lr_mode==3:
+                        self.update_lr[name] = tf.get_variable(name+"_lr", shape=weights[name].shape, initializer=lr_initializer)
 
             # outputbs[i] and lossesb[i] is the output and loss after i+1 gradient updates
             lossesa, outputas, lossesb, outputbs = [], [], [], []
@@ -87,7 +98,7 @@ class MAML:
                 if FLAGS.stop_grad:
                     grads = [tf.stop_gradient(grad) for grad in grads]
                 gradients = dict(zip(weights.keys(), grads))
-                fast_weights = dict(zip(weights.keys(), [weights[key] - self.update_lr*gradients[key] for key in weights.keys()]))
+                fast_weights = dict(zip(weights.keys(), [weights[key] - self.update_lr[key]*gradients[key] for key in weights.keys()]))
                 output = self.forward(inputb, fast_weights, reuse=True)
                 task_outputbs.append(output)
                 task_lossesb.append(self.loss_func(output, labelb))
@@ -98,7 +109,7 @@ class MAML:
                     if FLAGS.stop_grad:
                         grads = [tf.stop_gradient(grad) for grad in grads]
                     gradients = dict(zip(fast_weights.keys(), grads))
-                    fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr*gradients[key] for key in fast_weights.keys()]))
+                    fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr[key]*gradients[key] for key in fast_weights.keys()]))
                     output = self.forward(inputb, fast_weights, reuse=True)
                     task_outputbs.append(output)
                     task_lossesb.append(self.loss_func(output, labelb))

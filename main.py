@@ -67,6 +67,13 @@ flags.DEFINE_bool('test_set', False, 'Set to true to test on the the test set, F
 flags.DEFINE_integer('train_update_batch_size', -1, 'number of examples used for gradient update during training (use if you want to test with a different number).')
 flags.DEFINE_float('train_update_lr', -1, 'value of inner gradient step step during training. (use if you want to test with a different value)') # 0.1 for omniglot
 
+# added flags
+flags.DEFINE_integer('lr_mode', 0, 'inner lr mode (default 0), 
+                                    1: all variables share one lr
+                                    2: each variable has one lr 
+                                    3: each variable has one lr with the same shape')
+
+
 def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
     SUMMARY_INTERVAL = 100
     SAVE_INTERVAL = 1000
@@ -290,6 +297,7 @@ def main():
     model.summ_op = tf.summary.merge_all()
 
     saver = loader = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), max_to_keep=10)
+    print(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
 
     sess = tf.InteractiveSession()
 
