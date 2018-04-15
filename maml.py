@@ -64,11 +64,11 @@ class MAML:
                 # self.update_lr = tf.Variable(0.001, name="updatelr")
                 lr_initializer = tf.initializers.truncated_normal(mean=0.01, stddev=0.001)
                 self.update_lr = {}
-                updatelr = tf.get_variable('updatelr', shape=(), initializer=tf.initializers.constant(0.01))
                 for name in weights.keys():
                     if FLAGS.lr_mode==0:
                         self.update_lr[name] = FLAGS.update_lr
                     elif FLAGS.lr_mode==1:
+                        updatelr = tf.get_variable('updatelr', shape=(), initializer=tf.initializers.constant(0.01))
                         self.update_lr[name] = updatelr
                     elif FLAGS.lr_mode==2:
                         self.update_lr[name] = tf.get_variable(name+"_lr", shape=(), initializer=lr_initializer)

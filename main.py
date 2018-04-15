@@ -68,10 +68,7 @@ flags.DEFINE_integer('train_update_batch_size', -1, 'number of examples used for
 flags.DEFINE_float('train_update_lr', -1, 'value of inner gradient step step during training. (use if you want to test with a different value)') # 0.1 for omniglot
 
 # added flags
-flags.DEFINE_integer('lr_mode', 0, 'inner lr mode (default 0), 
-                                    1: all variables share one lr
-                                    2: each variable has one lr 
-                                    3: each variable has one lr with the same shape')
+flags.DEFINE_integer('lr_mode', 0, 'inner lr mode (default 0), 1: all variables share one lr 2: each variable has one lr  3: each variable has one lr with the same shape')
 
 
 def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
@@ -328,6 +325,9 @@ def main():
         exp_string += 'nonorm'
     else:
         print('Norm setting not recognized.')
+    if FLAGS.lr_mode>0:
+        exp_string += 'lrmode'+str(FLAGS.lr_mode)
+    print(exp_string)
 
     resume_itr = 0
     model_file = None
