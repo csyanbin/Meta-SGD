@@ -30,6 +30,8 @@ import random
 import tensorflow as tf
 
 from data_generator import DataGenerator
+from dataset_mini import *
+from dataset_tiered import *
 from maml import MAML
 from tensorflow.python.platform import flags
 
@@ -69,11 +71,67 @@ flags.DEFINE_float('train_update_lr', -1, 'value of inner gradient step step dur
 
 # added flags
 flags.DEFINE_integer('lr_mode', 0, 'inner lr mode (default 0), 1: all variables share one lr 2: each variable has one lr  3: each variable has one lr with the same shape')
+flags.DEFINE_integer('num_unlabel', 0, 'unlabel data each class')
+flags.DEFINE_integer('n_distractor', 0, 'distractor class number')
+
+def load_batch_data(loader, n_way, n_shot, n_query, num_unlabel, n_distractor):
+    inputa = []
+    labela = []
+    inputb = []
+    labelb = []
+    unlabel = []
+    if loader.split=="test":
+        FLAGS.meta_batch_size = 1
+    for b in xrange(FLAGS.meta_batch_size):
+        s, s_labels, q, q_labels, u = loader.next_data(n_way, n_shot, n_query, num_unlabel, n_distractor)
+        s = np.reshape(s,(n_way*n_shot,-1))
+        q = np.reshape(q,(n_way*n_query,-1))
+        s_labels = np.reshape(s_labels, (-1))
+        q_labels = np.reshape(q_labels, (-1))
+        if num_unlabel>0:
+            u = np.reshape(u,((n_way+n_distractor)*num_unlabel,-1))
+            unlabel.append(u)
+        inputa.append(s)
+        inputb.append(q)
+        
+        s_onehot = np.zeros((n_shot*n_way,n_way))
+        s_onehot[np.arange(n_shot*n_way),s_labels] = 1
+        labela.append(s_onehot)
+        q_onehot = np.zeros((n_query*n_way,n_way))
+        q_onehot[np.arange(n_query*n_way),q_labels] = 1
+        labelb.append(q_onehot)
 
 
-def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
+    inputa = np.array(inputa)
+    labela = np.array(labela)
+    inputb = np.array(inputb)
+    labelb = np.array(labelb)
+    if num_unlabel>0:
+        unlabel = np.array(unlabel)
+
+    return inputa, labela, inputb, labelb, unlabel
+
+
+def train(model, saver, sess, exp_string, resume_itr=0):
+    args = {}
+    args['x_dim'] = '84,84,3'
+    args['ratio'] = 1.0
+    args['seed'] = 1000
+    n_query = 15
+    num_unlabel = FLAGS.num_unlabel
+    n_distractor = FLAGS.n_distractor
+    if FLAGS.datasource=='miniimagenet':
+        loader_train = dataset_mini(600, 100, 'train',args)
+        loader_val = dataset_mini(600, 100, 'val',args)
+    elif FLAGS.datasource=='tiered':
+        loader_train = dataset_tiered(600, 100, 'train',args)
+        loader_val = dataset_tiered(600, 100, 'val',args)
+    
+    loader_train.load_data_pkl()
+    loader_val.load_data_pkl()
+
     SUMMARY_INTERVAL = 100
-    SAVE_INTERVAL = 1000
+    SAVE_INTERVAL = 2000
     if FLAGS.datasource == 'sinusoid':
         PRINT_INTERVAL = 1000
         TEST_PRINT_INTERVAL = PRINT_INTERVAL*5
@@ -86,25 +144,14 @@ def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
     print('Done initializing, starting training.')
     prelosses, postlosses = [], []
 
-    num_classes = data_generator.num_classes # for classification, 1 otherwise
+    num_classes = FLAGS.num_classes # for classification, 1 otherwise
     multitask_weights, reg_weights = [], []
 
     for itr in range(resume_itr, FLAGS.pretrain_iterations + FLAGS.metatrain_iterations):
         feed_dict = {}
-        if 'generate' in dir(data_generator):
-            batch_x, batch_y, amp, phase = data_generator.generate()
-
-            if FLAGS.baseline == 'oracle':
-                batch_x = np.concatenate([batch_x, np.zeros([batch_x.shape[0], batch_x.shape[1], 2])], 2)
-                for i in range(FLAGS.meta_batch_size):
-                    batch_x[i, :, 1] = amp[i]
-                    batch_x[i, :, 2] = phase[i]
-
-            inputa = batch_x[:, :num_classes*FLAGS.update_batch_size, :]
-            labela = batch_y[:, :num_classes*FLAGS.update_batch_size, :]
-            inputb = batch_x[:, num_classes*FLAGS.update_batch_size:, :] # b used for testing
-            labelb = batch_y[:, num_classes*FLAGS.update_batch_size:, :]
-            feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb}
+        if True:
+            inputa, labela, inputb, labelb, unlabel = load_batch_data(loader_train, num_classes, FLAGS.update_batch_size, n_query, num_unlabel, n_distractor)
+            feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb, model.unlabel:unlabel}
 
         if itr < FLAGS.pretrain_iterations:
             input_tensors = [model.pretrain_op]
@@ -138,19 +185,9 @@ def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
 
         # sinusoid is infinite data, so no need to test on meta-validation set.
         if (itr!=0) and itr % TEST_PRINT_INTERVAL == 0 and FLAGS.datasource !='sinusoid':
-            if 'generate' not in dir(data_generator):
-                feed_dict = {}
-                if model.classification:
-                    input_tensors = [model.metaval_total_accuracy1, model.metaval_total_accuracies2[FLAGS.num_updates-1], model.summ_op]
-                else:
-                    input_tensors = [model.metaval_total_loss1, model.metaval_total_losses2[FLAGS.num_updates-1], model.summ_op]
-            else:
-                batch_x, batch_y, amp, phase = data_generator.generate(train=False)
-                inputa = batch_x[:, :num_classes*FLAGS.update_batch_size, :]
-                inputb = batch_x[:, num_classes*FLAGS.update_batch_size:, :]
-                labela = batch_y[:, :num_classes*FLAGS.update_batch_size, :]
-                labelb = batch_y[:, num_classes*FLAGS.update_batch_size:, :]
-                feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb, model.meta_lr: 0.0}
+            if True:
+                inputa, labela, inputb, labelb, unlabel = load_batch_data(loader_val, num_classes, FLAGS.update_batch_size, n_query, num_unlabel, n_distractor)
+                feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb, model.unlabel:unlabel}
                 if model.classification:
                     input_tensors = [model.total_accuracy1, model.total_accuracies2[FLAGS.num_updates-1]]
                 else:
@@ -165,31 +202,29 @@ def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
 NUM_TEST_POINTS = 600
 
 def test(model, saver, sess, exp_string, data_generator, test_num_updates=None):
-    num_classes = data_generator.num_classes # for classification, 1 otherwise
+    num_classes = FLAGS.num_classes # for classification, 1 otherwise
 
-    np.random.seed(1)
-    random.seed(1)
+    np.random.seed(1000)
+    random.seed(1000)
 
     metaval_accuracies = []
-
+    
+    args = {}
+    args['x_dim'] = '84,84,3'
+    args['ratio'] = 1.0
+    args['seed'] = 1000
+    n_query = 1
+    num_unlabel = FLAGS.num_unlabel
+    n_distractor = FLAGS.n_distractor
+    if FLAGS.datasource=='miniimagenet':
+        loader_test = dataset_mini(600, 100, 'test',args)
+    elif FLAGS.datasource=='tiered':
+        loader_test = dataset_tiered(600, 100, 'test',args)
+    
+    loader_test.load_data_pkl()
     for _ in range(NUM_TEST_POINTS):
-        if 'generate' not in dir(data_generator):
-            feed_dict = {}
-            feed_dict = {model.meta_lr : 0.0}
-        else:
-            batch_x, batch_y, amp, phase = data_generator.generate(train=False)
-
-            if FLAGS.baseline == 'oracle': # NOTE - this flag is specific to sinusoid
-                batch_x = np.concatenate([batch_x, np.zeros([batch_x.shape[0], batch_x.shape[1], 2])], 2)
-                batch_x[0, :, 1] = amp[0]
-                batch_x[0, :, 2] = phase[0]
-
-            inputa = batch_x[:, :num_classes*FLAGS.update_batch_size, :]
-            inputb = batch_x[:,num_classes*FLAGS.update_batch_size:, :]
-            labela = batch_y[:, :num_classes*FLAGS.update_batch_size, :]
-            labelb = batch_y[:,num_classes*FLAGS.update_batch_size:, :]
-
-            feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb, model.meta_lr: 0.0}
+        inputa, labela, inputb, labelb, unlabel = load_batch_data(loader_test, num_classes, FLAGS.update_batch_size, n_query, num_unlabel, n_distractor)
+        feed_dict = {model.inputa: inputa, model.inputb: inputb,  model.labela: labela, model.labelb: labelb, model.unlabel:unlabel, model.meta_lr: 0.0}
 
         if model.classification:
             result = sess.run([model.total_accuracy1] + model.total_accuracies2, feed_dict)
@@ -236,65 +271,42 @@ def main():
         # always use meta batch size of 1 when testing.
         FLAGS.meta_batch_size = 1
 
-    if FLAGS.datasource == 'sinusoid':
-        data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)
-    else:
-        if FLAGS.metatrain_iterations == 0 and FLAGS.datasource == 'miniimagenet':
-            assert FLAGS.meta_batch_size == 1
-            assert FLAGS.update_batch_size == 1
-            data_generator = DataGenerator(1, FLAGS.meta_batch_size)  # only use one datapoint,
-        else:
-            if FLAGS.datasource == 'miniimagenet': # TODO - use 15 val examples for imagenet?
-                if FLAGS.train:
-                    data_generator = DataGenerator(FLAGS.update_batch_size+15, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
-                else:
-                    data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
-            else:
-                data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
+    # if FLAGS.datasource == 'sinusoid':
+    #     data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)
+    # else:
+    #     if FLAGS.metatrain_iterations == 0 and FLAGS.datasource == 'miniimagenet':
+    #         assert FLAGS.meta_batch_size == 1
+    #         assert FLAGS.update_batch_size == 1
+    #         data_generator = DataGenerator(1, FLAGS.meta_batch_size)  # only use one datapoint,
+    #     else:
+    #         if FLAGS.datasource == 'miniimagenet': # TODO - use 15 val examples for imagenet?
+    #             if FLAGS.train:
+    #                 data_generator = DataGenerator(FLAGS.update_batch_size+15, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
+    #             else:
+    #                 data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
+    #         else:
+    #             data_generator = DataGenerator(FLAGS.update_batch_size*2, FLAGS.meta_batch_size)  # only use one datapoint for testing to save memory
 
 
-    dim_output = data_generator.dim_output
+    dim_output = FLAGS.num_classes
     if FLAGS.baseline == 'oracle':
         assert FLAGS.datasource == 'sinusoid'
         dim_input = 3
         FLAGS.pretrain_iterations += FLAGS.metatrain_iterations
         FLAGS.metatrain_iterations = 0
     else:
-        dim_input = data_generator.dim_input
-
-    if FLAGS.datasource == 'miniimagenet' or FLAGS.datasource == 'omniglot':
-        tf_data_load = True
-        num_classes = data_generator.num_classes
-
-        if FLAGS.train: # only construct training model if needed
-            random.seed(5)
-            image_tensor, label_tensor = data_generator.make_data_tensor()
-            inputa = tf.slice(image_tensor, [0,0,0], [-1,num_classes*FLAGS.update_batch_size, -1])
-            inputb = tf.slice(image_tensor, [0,num_classes*FLAGS.update_batch_size, 0], [-1,-1,-1])
-            labela = tf.slice(label_tensor, [0,0,0], [-1,num_classes*FLAGS.update_batch_size, -1])
-            labelb = tf.slice(label_tensor, [0,num_classes*FLAGS.update_batch_size, 0], [-1,-1,-1])
-            input_tensors = {'inputa': inputa, 'inputb': inputb, 'labela': labela, 'labelb': labelb}
-
-        random.seed(6)
-        image_tensor, label_tensor = data_generator.make_data_tensor(train=False)
-        inputa = tf.slice(image_tensor, [0,0,0], [-1,num_classes*FLAGS.update_batch_size, -1])
-        inputb = tf.slice(image_tensor, [0,num_classes*FLAGS.update_batch_size, 0], [-1,-1,-1])
-        labela = tf.slice(label_tensor, [0,0,0], [-1,num_classes*FLAGS.update_batch_size, -1])
-        labelb = tf.slice(label_tensor, [0,num_classes*FLAGS.update_batch_size, 0], [-1,-1,-1])
-        metaval_input_tensors = {'inputa': inputa, 'inputb': inputb, 'labela': labela, 'labelb': labelb}
-    else:
-        tf_data_load = False
-        input_tensors = None
+        dim_input = 84*84*3
 
     model = MAML(dim_input, dim_output, test_num_updates=test_num_updates)
-    if FLAGS.train or not tf_data_load:
-        model.construct_model(input_tensors=input_tensors, prefix='metatrain_')
-    if tf_data_load:
-        model.construct_model(input_tensors=metaval_input_tensors, prefix='metaval_')
+    if FLAGS.train:
+        model.construct_model(input_tensors=None, prefix='metatrain_')
+    else:
+        model.construct_model(input_tensors=None, prefix='metaval_')
     model.summ_op = tf.summary.merge_all()
 
-    saver = loader = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), max_to_keep=10)
-    print(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES))
+    saver = loader = tf.train.Saver(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), max_to_keep=40)
+    for var in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES):
+        print(var.name)
 
     sess = tf.InteractiveSession()
 
@@ -333,7 +345,7 @@ def main():
     model_file = None
 
     tf.global_variables_initializer().run()
-    tf.train.start_queue_runners()
+    #tf.train.start_queue_runners()
 
     if FLAGS.resume or not FLAGS.train:
         model_file = tf.train.latest_checkpoint(FLAGS.logdir + '/' + exp_string)
@@ -346,9 +358,9 @@ def main():
             saver.restore(sess, model_file)
 
     if FLAGS.train:
-        train(model, saver, sess, exp_string, data_generator, resume_itr)
+        train(model, saver, sess, exp_string, resume_itr)
     else:
-        test(model, saver, sess, exp_string, data_generator, test_num_updates)
+        test(model, saver, sess, exp_string, test_num_updates)
 
 if __name__ == "__main__":
     main()
