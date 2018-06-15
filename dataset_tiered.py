@@ -81,12 +81,20 @@ class dataset_tiered(object):
                 raise ValueError('path png_pkl not exits')
         
         if os.path.exists(images_name) and os.path.exists(labels_name):
-            with open(labels_name) as f:
-                data = pkl.load(f)
-                label_specific = data["label_specific"]
-                #label_general = data["label_general"]
-                #label_specific_str = data["label_specific_str"]
-                #label_general_str = data["label_general_str"]
+            try:
+                with open(labels_name) as f:
+                    data = pkl.load(f)
+                    label_specific = data["label_specific"]
+                    #label_general = data["label_general"]
+                    #label_specific_str = data["label_specific_str"]
+                    #label_general_str = data["label_general_str"]
+            except:
+                with open(labels_name, 'rb') as f:
+                    data = pkl.load(f, encoding='bytes')
+                    label_specific = data[b'label_specific']
+                    #label_general = data[b"label_general"]
+                    #label_specific_str = data[b"label_specific_str"]
+                    #label_general_str = data[b"label_general_str"]
             print('read label data:{}'.format(len(label_specific)))
         labels = label_specific
 
