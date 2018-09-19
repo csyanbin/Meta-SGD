@@ -1,0 +1,2 @@
+CUDA_VISIBLE_DEVICES="0" python main.py --datasource=miniimagenet --metatrain_iterations=60000 --meta_batch_size=4 --update_batch_size=1 --update_lr=0.01 --num_updates=5 --num_classes=10 --logdir=logs/miniimagenet10w1shot/ --num_filters=32 --max_pool=True
+CUDA_VISIBLE_DEVICES="1" python main.py --datasource=miniimagenet --metatrain_iterations=60000 --meta_batch_size=4 --update_batch_size=5 --update_lr=0.01 --num_updates=5 --num_classes=10 --logdir=logs/miniimagenet10w5shot/ --num_filters=32 --max_pool=True
