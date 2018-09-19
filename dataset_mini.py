@@ -110,24 +110,30 @@ class dataset_mini(object):
         pkl_name = '{}/data/mini-imagenet-cache-{}.pkl'.format(self.root_dir, self.split)
         print('Loading pkl dataset: {} '.format(pkl_name))
 
-        f = open(pkl_name)
-        data = pkl.load(f)
-        print(data.keys(), data['image_data'].shape, data['class_dict'].keys())
-        image_data = data['image_data']
-        data_classes = sorted(data['class_dict'].keys()) # sorted to keep the order
+        try:
+          with open(pkl_name, "rb") as f:
+            data = pkl.load(f, encoding='bytes')
+            image_data = data[b'image_data']
+            class_dict = data[b'class_dict']
+        except:
+          with open(pkl_name, "rb") as f:
+            data = pkl.load(f)
+            image_data = data['image_data']
+            class_dict = data['class_dict']
+
+        print(data.keys(), image_data.shape, class_dict.keys())
+        data_classes = sorted(class_dict.keys()) # sorted to keep the order
 
         n_classes = len(data_classes)
         print('n_classes:{}, n_label:{}, n_unlabel:{}'.format(n_classes,self.n_label,self.n_unlabel))
-        dataset_l = np.zeros([n_classes, self.n_label, self.im_height, self.im_width, self.channels],
-                                 dtype=np.float32)
+        dataset_l = np.zeros([n_classes, self.n_label, self.im_height, self.im_width, self.channels], dtype=np.float32)
         if self.n_unlabel>0:
-            dataset_u = np.zeros([n_classes, self.n_unlabel, self.im_height, self.im_width, self.channels],
-                                 dtype=np.float32)
+            dataset_u = np.zeros([n_classes, self.n_unlabel, self.im_height, self.im_width, self.channels], dtype=np.float32)
         else:
             dataset_u = []
 
         for i, cls in enumerate(data_classes):
-            idxs = data['class_dict'][cls] 
+            idxs = class_dict[cls] 
             np.random.RandomState(self.seed).shuffle(idxs) # fix the seed to keep label,unlabel fixed
             dataset_l[i] = image_data[idxs[0:self.n_label]]
             if self.n_unlabel>0:
