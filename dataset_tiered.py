@@ -108,7 +108,7 @@ class dataset_tiered(object):
         dict_index_label = {} # key:label, value:idxs
         dict_index_unlabel = {}
         
-        for cls in xrange(n_classes):
+        for cls in range(n_classes):
             idxs = np.where(labels==cls)[0]
             nums = idxs.shape[0]
             np.random.RandomState(self.seed).shuffle(idxs) # fix the seed to keep label,unlabel fixed
