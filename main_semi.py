@@ -32,7 +32,7 @@ import tensorflow as tf
 from data_generator import DataGenerator
 from dataset_mini import *
 from dataset_tiered import *
-from maml import MAML
+from maml_semi import MAML
 from tensorflow.python.platform import flags
 
 FLAGS = flags.FLAGS
