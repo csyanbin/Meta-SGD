@@ -96,7 +96,6 @@ class MAML:
                 task_outputb, featb = self.forward(inputb, weights, reuse=True)   # only reuse on the first iter
                 task_lossa = self.loss_func(task_outputa, labela)
                 task_lossb = self.loss_reg(feata, featb, weights, task_outputa, task_outputb, reuse=reuse)
-                #task_lossb = tf.Print(task_lossb, [task_lossb], 'aaa1')
                 task_lossa = task_lossa+0.001*task_lossb
 
                 grads = tf.gradients(task_lossa, list(weights.values()))
@@ -113,8 +112,8 @@ class MAML:
                     task_outputb, featb  = output, feat
                     task_lossa = self.loss_func(task_outputa, labela)
                     task_lossb = self.loss_reg(feata, featb, fast_weights, task_outputa, task_outputb, reuse=True)
-                    #task_lossb = tf.Print(task_lossb, [task_lossb], 'aaa')
                     loss = task_lossa+0.001*task_lossb
+                    #loss = task_lossa
 
                     #loss = self.loss_func(self.forward(inputa, fast_weights, reuse=True), labela)
                     grads = tf.gradients(loss, list(fast_weights.values()))

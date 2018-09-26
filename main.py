@@ -213,7 +213,7 @@ def test(model, saver, sess, exp_string, data_generator, test_num_updates=None):
     args['x_dim'] = '84,84,3'
     args['ratio'] = 1.0
     args['seed'] = 1000
-    n_query = 1
+    n_query = 15
     num_unlabel = FLAGS.num_unlabel
     n_distractor = FLAGS.n_distractor
     if FLAGS.datasource=='miniimagenet':
