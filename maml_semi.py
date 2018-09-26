@@ -96,8 +96,7 @@ class MAML:
                 task_outputb, featb = self.forward(inputb, weights, reuse=True)   # only reuse on the first iter
                 task_lossa = self.loss_func(task_outputa, labela)
                 task_lossb = self.loss_reg(feata, featb, weights, task_outputa, task_outputb, reuse=reuse)
-                task_lossb = tf.Print(task_lossb, [task_lossb], 'aaa1')
-                task_lossa = task_lossa+task_lossb
+                task_lossa = task_lossa+0.001*task_lossb
 
                 grads = tf.gradients(task_lossa, list(weights.values()))
                 if FLAGS.stop_grad:
@@ -113,8 +112,8 @@ class MAML:
                     task_outputb, featb  = output, feat
                     task_lossa = self.loss_func(task_outputa, labela)
                     task_lossb = self.loss_reg(feata, featb, fast_weights, task_outputa, task_outputb, reuse=True)
-                    task_lossb = tf.Print(task_lossb, [task_lossb], 'aaa')
-                    loss = task_lossa+task_lossb
+                    loss = task_lossa+0.001*task_lossb
+                    #loss = task_lossa
 
                     #loss = self.loss_func(self.forward(inputa, fast_weights, reuse=True), labela)
                     grads = tf.gradients(loss, list(fast_weights.values()))
@@ -165,8 +164,7 @@ class MAML:
                 self.gvs = gvs = optimizer.compute_gradients(self.total_losses2[FLAGS.num_updates-1])
                 if FLAGS.datasource in ['miniimagenet','tiered']:
                     for grad,var in gvs:
-                        if grad is not None:
-                            print(var.name)
+                        print(var.name)
                     gvs = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in gvs]
                 self.metatrain_op = optimizer.apply_gradients(gvs)
         else:
@@ -231,14 +229,8 @@ class MAML:
             weights['b5'] = tf.Variable(tf.zeros([self.dim_output]), name='b5')
         
         # relation weights
-        weights['conv-r1'] = tf.get_variable('conv-r1', [k, k, self.dim_hidden, self.dim_hidden], initializer=conv_initializer, dtype=dtype)
-        weights['b-r1'] = tf.Variable(tf.zeros([self.dim_hidden]))
-        weights['conv-r2'] = tf.get_variable('conv-r2', [k, k, self.dim_hidden, 1], initializer=conv_initializer, dtype=dtype)
-        weights['b-r2'] = tf.Variable(tf.zeros([1]))
-        weights['w-r3'] = tf.get_variable('w-r3', [2*2, 8], initializer=fc_initializer)
-        weights['b-r3'] = tf.Variable(tf.zeros([8]), name='b-r3')
-        weights['w-r4'] = tf.get_variable('w-r4', [8, 1], initializer=fc_initializer)
-        weights['b-r4'] = tf.Variable(tf.zeros([1]), name='b-r4')
+        #weights['sigma'] = tf.Variable(tf.ones([1]), name='sigma')
+        weights['sigma'] = tf.constant(1.0, name='sigma')
 
         return weights
 
@@ -259,39 +251,24 @@ class MAML:
 
         return tf.matmul(hidden4, weights['w5']) + weights['b5'], hidden4
 
-    def relation(self, fea, weights, reuse=False, scope=''):
-        # reuse is for the normalization parameters.
-        fea = tf.reshape(fea, [-1, 5, 5, 32])
-
-        re1 = conv_block(fea, weights['conv-r1'], weights['b-r1'], reuse, scope+'r0', max_pool_pad='SAME')
-        re2 = conv_block(re1, weights['conv-r2'], weights['b-r2'], reuse, scope+'r1', max_pool_pad='SAME')
-        re2 = tf.reshape(re2, [-1, np.prod([int(dim) for dim in re2.get_shape()[1:]])])
-        re3 = tf.matmul(re2, weights['w-r3']) + weights['b-r3']
-        re3 = tf.nn.relu(re3)
-        re4 = tf.matmul(re3, weights['w-r4']) + weights['b-r4']
-
-        return re4
 
     def loss_reg(self, feata, featb, weights, task_outputa, task_outputb, reuse=True):
         epsilon = np.finfo(float).eps
-        sigmaa = self.relation(feata, weights, reuse=reuse)
-        sigmab = self.relation(featb, weights, reuse=True)
-        
-        sigma  = tf.concat([sigmaa, sigmab], 0)
         feat   = tf.concat([feata, featb], 0)
         output = tf.concat([task_outputa, task_outputb], 0)
         label  = tf.argmax(output, 1)
         
-        feat_s = feat/(sigma+epsilon)       
+        feat_s = feat/(weights['sigma']+epsilon)       
         f1     = tf.expand_dims(feat_s, axis=0) # 1xNxd
         f2     = tf.expand_dims(feat_s, axis=1) # Nx1xd
 
         W = tf.reduce_mean(tf.square(f1-f2), axis=2)
+        #W = tf.Print(W, [W], 'W')
         W = tf.exp(-W/2)
     
         L1 = tf.expand_dims(label, axis=0)
         L2 = tf.expand_dims(label, axis=1)
-        L = tf.cast(tf.equal(L1,L2), tf.float32)
+        L = 1-tf.cast(tf.equal(L1,L2), tf.float32)
         
         return tf.reduce_sum(W*L)/2
 
