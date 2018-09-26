@@ -97,7 +97,7 @@ class MAML:
                 task_lossa = self.loss_func(task_outputa, labela)
                 task_lossb = self.loss_reg(feata, featb, weights, task_outputa, task_outputb, reuse=reuse)
                 #task_lossb = tf.Print(task_lossb, [task_lossb], 'aaa1')
-                task_lossa = task_lossa+0.001*task_lossb
+                task_lossa = task_lossa+FLAGS.reg*task_lossb
 
                 grads = tf.gradients(task_lossa, list(weights.values()))
                 if FLAGS.stop_grad:

@@ -74,6 +74,8 @@ flags.DEFINE_integer('lr_mode', 0, 'inner lr mode (default 0), 1: all variables 
 flags.DEFINE_integer('num_unlabel', 0, 'unlabel data each class')
 flags.DEFINE_integer('n_distractor', 0, 'distractor class number')
 
+flags.DEFINE_float('reg', 1e-3, 'weight for regularization.') # 0.1 for omniglot
+
 def load_batch_data(loader, n_way, n_shot, n_query, num_unlabel, n_distractor):
     inputa = []
     labela = []
