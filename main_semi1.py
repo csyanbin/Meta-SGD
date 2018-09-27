@@ -264,9 +264,9 @@ def main():
             if FLAGS.train == True:
                 test_num_updates = 1  # eval on at least one update during training
             else:
-                test_num_updates = 10
+                test_num_updates = 15
         else:
-            test_num_updates = 10
+            test_num_updates = 15
 
     if FLAGS.train == False:
         orig_meta_batch_size = FLAGS.meta_batch_size
