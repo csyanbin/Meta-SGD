@@ -232,7 +232,7 @@ class MAML:
         
         # relation weights
         #weights['sigma'] = tf.Variable(tf.ones([1]), name='sigma')
-        weights['sigma'] = tf.constant(1.0, name='sigma')
+        weights['sigma'] = tf.constant(FLAGS.sigma, name='sigma')
 
         return weights
 
